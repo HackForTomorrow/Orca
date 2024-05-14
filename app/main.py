@@ -14,6 +14,8 @@ from openai import OpenAI
 from langchain.schema import HumanMessage
 from langchain_openai import ChatOpenAI
 from pydub import AudioSegment
+from google.cloud import texttospeech
+
 
 
 
@@ -33,6 +35,8 @@ messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
 openai_api_key = ""
+service_account_path = "orca-sa.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
 client = OpenAI()
 # Logging
 logging.basicConfig(
@@ -151,7 +155,7 @@ def hook():
                 messenger.send_message(response, mobile)
                 print(transcription_text)
                 
-                text_to_wav("en-US-Wavenet-D", transcription_text)
+                text_to_wav("en-US-Wavenet-D", response)
                 wav_filename = "en-US-Wavenet-D.wav"
                 mp3_filename = "en-US-Wavenet-D.mp3"
                 convert_wav_to_mp3(wav_filename, mp3_filename)
@@ -180,14 +184,15 @@ def hook():
 
 def text_to_wav(voice_name: str, text: str):
     language_code = "-".join(voice_name.split("-")[:2])
-    text_input = tts.SynthesisInput(text=text)
-    voice_params = tts.VoiceSelectionParams(
+    text_input = texttospeech.SynthesisInput(text=text)
+    voice_params = texttospeech.VoiceSelectionParams(
         language_code=language_code, name=voice_name
     )
-    audio_config = tts.AudioConfig(audio_encoding=tts.AudioEncoding.LINEAR16)
+    audio_config = texttospeech.AudioConfig(audio_encoding=texttospeech.AudioEncoding.LINEAR16)
 
-    client = tts.TextToSpeechClient()
-    
+    # Create the client using the explicit credentials
+    client = texttospeech.TextToSpeechClient.from_service_account_file(service_account_path)
+
     try:
         response = client.synthesize_speech(
             input=text_input,
