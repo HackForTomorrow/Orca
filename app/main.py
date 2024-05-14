@@ -291,6 +291,7 @@ def train_model(prompt, context):
     output = chat_model([
         HumanMessage(content=context),  
         HumanMessage(content=prompt)  
+    ])
 
     # Get the response from the model
     response = output.content
