@@ -35,7 +35,7 @@ messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
 openai_api_key = ""
-service_account_path = "orca-sa.json"
+service_account_path = "./orca-sa.json"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
 client = OpenAI()
 # Logging
@@ -289,16 +289,15 @@ def train_model(prompt, context):
         max_tokens=350
     )
     output = chat_model([
-        HumanMessage(content=context),  # Provide context
-        HumanMessage(content=prompt)  # Provide prompt
-    ])
+        HumanMessage(content=context),  
+        HumanMessage(content=prompt)  
 
     # Get the response from the model
     response = output.content
     global engtext
     engtext = response
     print(response)
-    return response  # Return the response
+    return response  
 
 def process_message(message):
     description = message

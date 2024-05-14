@@ -2,9 +2,9 @@ flask
 python-dotenv
 openai
 whisper
-base64
+
 requests
-io
+
 Pillow
 heyoo
 dotenv
