@@ -32,7 +32,7 @@ if not access_token or not phone_number_id:
 messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
-openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_api_key = ""
 client = OpenAI()
 # Logging
 logging.basicConfig(

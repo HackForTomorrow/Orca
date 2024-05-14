@@ -1,3 +1,16 @@
 flask
 python-dotenv
 openai
+whisper
+base64
+requests
+io
+Pillow
+heyoo
+dotenv
+flask
+google.cloud.texttospeech
+openai
+langchain.schema
+langchain_openai
+pydub 
