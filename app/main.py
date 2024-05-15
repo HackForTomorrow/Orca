@@ -4,6 +4,7 @@ import openai
 import whisper
 import base64
 import requests
+import urllib.parse
 from io import BytesIO
 from PIL import Image
 from heyoo import WhatsApp
@@ -15,6 +16,7 @@ from langchain.schema import HumanMessage
 from langchain_openai import ChatOpenAI
 from pydub import AudioSegment
 from google.cloud import texttospeech
+from google.cloud import translate_v2 as translate
 
 
 
@@ -35,6 +37,7 @@ messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
 openai_api_key = ""
+google_api_key = os.getenv("GOOGLE_API_KEY")
 service_account_path = "./orca-sa.json"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
 client = OpenAI()
@@ -80,7 +83,9 @@ def hook():
                 message = messenger.get_message(data)
                 response = process_message(message)
                 print(response)
-                messenger.send_message(response, mobile)  
+                translated_text = translate_text(response, "ml")
+                text_to_wav("ml-IN-Wavenet-D", translated_text)
+                messenger.send_message(translated_text, mobile)  
                 # messenger.send_audio(audio="temp.ogg", mobile)
             #     messenger.send_button(
             #     recipient_id="+919048806904",
@@ -122,6 +127,7 @@ def hook():
                 message_longitude = message_location["longitude"]
                 logging.info("Location: %s, %s", message_latitude, message_longitude)
                 messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
+                fetch_device_details("iphone 15")
 
             elif message_type == "image":
                 image = messenger.get_image(data)
@@ -268,6 +274,53 @@ def convert_audio_to_text(audio_filename):
                 file=audio_file     
             )
     return transcript.text
+
+client1 = translate.Client()
+
+
+def translate_text(text, target_language) -> str:
+    result = client1.translate(text, target_language=target_language)
+    print("Original Text: {}".format(result['input']))
+    print("Translated Text: {}".format(result['translatedText']))
+    print("Detected Source Language: {}".format(result['detectedSourceLanguage']))
+    
+    mal_string = result['translatedText']
+    return mal_string
+
+
+def fetch_device_details(device_name):
+    if  not device_name:
+        print("No device name selected. Please use the /selectdevice command first.")
+    formatted_device_name = urllib.parse.quote(device_name.strip(), safe='+')
+    
+    print(formatted_device_name)
+    # Send request to Google SERP API's Shopping API
+    url = f"https://serpapi.com/search?engine=google_shopping&q={formatted_device_name}&api_key={google_api_key}&gl=in&img=1"
+
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        data = response.json()
+        details = data.get('shopping_results')
+        if details:
+            trusted_platforms = ["Amazon","Flipkart"] 
+            trusted_results = [item for item in details if item.get('source') in trusted_platforms]
+            if trusted_results:
+                sorted_trusted_results = sorted(trusted_results, key=lambda x: x.get('price', float('inf')))
+                result = sorted_trusted_results[0]
+                platform = result.get('source')
+                price = result.get('price')
+                link = result.get('link')
+                message = f"Platform: {platform}\nPrice: {price}\nURL: {link}\n\n"
+                messenger.send_message(message, "+919048806904")
+                print(message)
+            # return "\n".join(device_info)
+                
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching device details: {e}")
+
+    return None
+
 
 def convert_wav_to_mp3(wav_filename, mp3_filename):
     audio = AudioSegment.from_wav(wav_filename)
