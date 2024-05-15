@@ -2,15 +2,12 @@ flask
 python-dotenv
 openai
 whisper
-
 requests
-
 Pillow
 heyoo
 dotenv
-flask
 google.cloud.texttospeech
-openai
 langchain.schema
 langchain_openai
 pydub 
+supabase

@@ -17,8 +17,12 @@ from langchain_openai import ChatOpenAI
 from pydub import AudioSegment
 from google.cloud import texttospeech
 from google.cloud import translate_v2 as translate
+from supabase import create_client, Client
+from datetime import datetime ,timezone
 
-
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase_client: Client = create_client(supabase_url, supabase_key)
 
 
 
@@ -59,6 +63,8 @@ def verify_token():
 
 @app.post("/webhook")
 def hook():
+    global responded
+    responded = False
     # Handle Webhook Subscriptions
     data = request.get_json()
     global mobile
@@ -82,7 +88,9 @@ def hook():
             # Now handle different message types without repeating the greeting
             if message_type == "text":
                 message = messenger.get_message(data)
-                response = process_message(message)
+                if responded==False:
+                    response = process_message(message)
+                    responded = True
                 print(response)
                 translated_text = translate_text(response, "ml")
                 text_to_wav("ml-IN-Wavenet-D", translated_text)
@@ -393,12 +401,54 @@ def train_model(prompt, context):
     return response  
 
 def process_message(message):
-    description = message
-    product_keywords = extract_product_keywords(description)
-    prompt = generate_prompt(description, product_keywords)
-    context_message = "Context: Orca is an AI assistant that provides recommendations about devices based on user requirements."
-    response1 = train_model(prompt,context_message)
-    return response1
+    user_id = mobile  # Ensure that this is defined globally or passed as an argument
+    store_message(user_id, "user", message)
+
+    # Retrieve the full conversation history for this user from your storage
+    conversation = get_conversation(user_id)
+    formatted_conversation = [{"role": msg['role'], "content": msg['content']} for msg in conversation]   
+
+    # Get the latest message from the user and form the payload for OpenAI completion
+    payload = [{
+        "role": "system",
+        "content": "You are a helpful assistant."
+    },
+    {
+        "role": "user",
+        "content": message
+    }]
+
+    # Get the response from the model
+    response_text = get_response(formatted_conversation + payload)        
+    store_message(user_id, "assistant", response_text)       
+
+    return response_text
+
+
+def get_response(conversation):
+    client = OpenAI(
+    # This is the default and can be omitted
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=conversation
+    )
+    return response.choices[0].message.content 
+
+def store_message(user_id, role, content):
+    data = {
+        "user_id": user_id,
+        "role": role,
+        "content": content,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    supabase_client.table("conversations").insert(data).execute()
+
+def get_conversation(user_id):
+    response = supabase_client.table("conversations").select("*").eq("user_id", user_id).order("created_at").execute()
+    return response.data
+
 
 def extract_product_keywords(description):
     # Read keywords from keywords.txt
