@@ -151,25 +151,24 @@ def hook():
                 audio_id, mime_type = audio["id"], audio["mime_type"]
                 audio_url = messenger.query_media_url(audio_id)
                 audio_filename = messenger.download_media(audio_url, mime_type)
-                
-                # Converting audio to text using OpenAI's Whisper cloud model
+
+                # Converts the audio file to text
                 transcription_text = convert_audio_to_text(audio_filename)
-                
+
                 # Process the transcribed text and send a response
                 response = process_message(transcription_text)
                 print(response)
                 messenger.send_message(response, mobile)
                 print(transcription_text)
-                
+
+                # Text to WAV using Google Cloud Text-to-Speech
                 text_to_wav("en-US-Wavenet-D", response)
                 wav_filename = "en-US-Wavenet-D.wav"
                 mp3_filename = "en-US-Wavenet-D.mp3"
                 convert_wav_to_mp3(wav_filename, mp3_filename)
 
-                messenger.send_audio(
-                    audio=mp3_filename,
-                    recipient_id=mobile,  # Use the provided mobile ID dynamically
-                ) # logging.info(f"{mobile} sent audio {audio_filename}")
+                # Send the generated audio file using local path
+                send_local_audio(mp3_filename, mobile)
 
             elif message_type == "document":
                 file = messenger.get_document(data)
@@ -325,6 +324,45 @@ def fetch_device_details(device_name):
 def convert_wav_to_mp3(wav_filename, mp3_filename):
     audio = AudioSegment.from_wav(wav_filename)
     audio.export(mp3_filename, format="mp3")
+
+def send_local_audio(file_path, recipient_id):
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    # Determine correct MIME type for the file and set the MIME type in the upload request.
+    mime_type = 'audio/mpeg'  # Assuming you're using MP3 format; adjust as needed
+    with open(file_path, 'rb') as file_data:
+        files = {
+            'file': (os.path.basename(file_path), file_data, mime_type)
+        }
+        response_media = requests.post(
+            f"https://graph.facebook.com/v18.0/{phone_number_id}/media",
+            headers=headers,
+            files=files,
+            data={"messaging_product": "whatsapp", "type": "audio"}
+        )
+
+    if response_media.status_code == 200:
+        media_id = response_media.json()["id"]
+        logging.info(f"Uploaded media ID: {media_id}")
+        
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": recipient_id,
+            "type": "audio",
+            "audio": {"id": media_id}
+        }
+
+        response_message = requests.post(url, headers=headers, json=payload)
+        if response_message.status_code == 200:
+            logging.info(f"Audio message sent to {recipient_id} successfully.")
+        else:
+            logging.error(f"Failed to send audio message to {recipient_id}. Status Code: {response_message.status_code}, Response: {response_message.text}")
+    else:
+        logging.error(f"Failed to upload media. Status Code: {response_media.status_code}, Response: {response_media.text}")
+
 
 
 def generate_prompt(description, product_keywords):
