@@ -20,17 +20,15 @@ from google.cloud import translate_v2 as translate
 from supabase import create_client, Client
 from datetime import datetime ,timezone
 
-supabase_url = os.getenv("SUPABASE_URL")
-supabase_key = os.getenv("SUPABASE_KEY")
-supabase_client: Client = create_client(supabase_url, supabase_key)
-
-
 
 # Initialize Flask App
 app = Flask(__name__)
 
 # Load .env file
 load_dotenv()
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+supabase_client: Client = create_client(supabase_url, supabase_key)
 access_token = os.getenv("ACCESS_TOKEN")
 phone_number_id = os.getenv("PHONE_NUMBER_ID")
 if not access_token or not phone_number_id:
