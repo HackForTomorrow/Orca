@@ -36,7 +36,7 @@ if not access_token or not phone_number_id:
 messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
-openai_api_key = ""
+openai_api_key = os.getenv('OPENAI_API_KEY')
 google_api_key = os.getenv("GOOGLE_API_KEY")
 service_account_path = "./orca-sa.json"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
@@ -61,6 +61,7 @@ def verify_token():
 def hook():
     # Handle Webhook Subscriptions
     data = request.get_json()
+    global mobile
     
     changed_field = messenger.changed_field(data)
     if changed_field == "messages":
@@ -85,7 +86,7 @@ def hook():
                 print(response)
                 translated_text = translate_text(response, "ml")
                 text_to_wav("ml-IN-Wavenet-D", translated_text)
-                messenger.send_message(translated_text, mobile)  
+                messenger.send_message(response, mobile)  
                 # messenger.send_audio(audio="temp.ogg", mobile)
             #     messenger.send_button(
             #     recipient_id="+919048806904",
@@ -127,7 +128,7 @@ def hook():
                 message_longitude = message_location["longitude"]
                 logging.info("Location: %s, %s", message_latitude, message_longitude)
                 messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
-                fetch_device_details("iphone 15")
+                fetch_device_details("iphone 12")
 
             elif message_type == "image":
                 image = messenger.get_image(data)
@@ -237,12 +238,12 @@ def process_image(image_filename):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "What’s in this image?"},
+                        {"type": "text", "text": "If the image is of a phone, identify the phone and fetch the specifications and details Else reply Sorry, I can't help with that. Can you try another image"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
             ],
-            "max_tokens": 300
+            "max_tokens": 1000
         }
 
         # Send the request to OpenAI API
@@ -311,7 +312,7 @@ def fetch_device_details(device_name):
                 price = result.get('price')
                 link = result.get('link')
                 message = f"Platform: {platform}\nPrice: {price}\nURL: {link}\n\n"
-                messenger.send_message(message, "+919048806904")
+                messenger.send_message(message, mobile)
                 print(message)
             # return "\n".join(device_info)
                 
@@ -377,7 +378,7 @@ def train_model(prompt, context):
         temperature=0,  
         model="gpt-4o",
         openai_api_key=openai_api_key,
-        max_tokens=350
+        max_tokens=1000
     )
     output = chat_model([
         HumanMessage(content=context),  
