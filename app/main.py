@@ -59,13 +59,15 @@ def verify_token():
     logging.error("Webhook Verification failed")
     return "Invalid verification token"
 
+gptresponse_dict = {}
+
 @app.post("/webhook")
 def hook():
-    global responded
-    responded = False
+   
     # Handle Webhook Subscriptions
     data = request.get_json()
     global mobile
+   
     
     changed_field = messenger.changed_field(data)
     if changed_field == "messages":
@@ -76,57 +78,95 @@ def hook():
             message_type = messenger.get_message_type(data)
             logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
 
-
             # Check if the user has been greeted already
             if not user_greeted.get(mobile, False):
                 # Send greeting and mark user as greeted
                 messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
                 user_greeted[mobile] = True
 
+            if mobile not in gptresponse_dict:
+                gptresponse_dict[mobile] = True
             # Now handle different message types without repeating the greeting
             if message_type == "text":
                 message = messenger.get_message(data)
-                if responded==False:
-                    response = process_message(message)
-                    responded = True
-                print(response)
-                translated_text = translate_text(response, "ml")
-                text_to_wav("ml-IN-Wavenet-D", translated_text)
-                messenger.send_message(response, mobile)  
-                # messenger.send_audio(audio="temp.ogg", mobile)
-            #     messenger.send_button(
-            #     recipient_id="+919048806904",
-            #     button={
-            #         "header": "Header Testing",
-            #         "body": "Body Testing",
-            #         "footer": "Footer Testing",
-            #         "action": {
-            #             "button": "Button Testing",
-            #             "sections": [
-            #                 {
-            #                     "title": "iBank",
-            #                     "rows": [
-            #                         {"id": "row 1", "title": "Send Money", "description": ""},
-            #                         {
-            #                             "id": "row 2",
-            #                             "title": "Withdraw money",
-            #                             "description": "",
-            #                         },
-            #                     ],
-            #                 }
-            #             ],
-            #         },
-            #     },
-            # )
+                greetings = ["hi", "hello"]
+                is_greeting = any(greeting in message.lower() for greeting in greetings)
+
+                if not is_greeting:
+            # Process non-greeting messages
+                    if gptresponse_dict.get(mobile):
+                        # Get a response from GPT
+                        response = process_message(message)
+                        messenger.send_message(response, mobile)
+                        print(response)
+                        send_reply_button(mobile)
+                        # Translate the response to Malayalam (ml)
+                        translated_text = translate_text(response, "ml")
+                        text_to_wav("ml-IN-Wavenet-D", translated_text)
+                        
+                        # Disable GPT response for subsequent messages
+                        gptresponse_dict[mobile] = False
+
+                        # Send the reply button once after the greeting phase
+                        
+
+                else:
+                    # First greeting from the user
+                    if not user_greeted.get(mobile):
+                        response = f"Hi {name}, how can I assist you today?"
+                        messenger.send_message(response, mobile)
+                        user_greeted[mobile] = True
 
 
             elif message_type == "interactive":
+                gptresponse_dict[mobile] = False
                 message_response = messenger.get_interactive_response(data)
                 interactive_type = message_response.get("type")
                 message_id = message_response[interactive_type]["id"]
                 message_text = message_response[interactive_type]["title"]
                 logging.info(f"Interactive Message; {message_id}: {message_text}")
-                messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
+                # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
+                if message_id == "b1":
+                    messenger.send_message("Please enter the device name", mobile)
+                    messenger.send_button(
+                    recipient_id=mobile,
+                    button={
+                        "header": "Header Testing",
+                        "body": "Body Testing",
+                        "footer": "Footer Testing",
+                        "action": {
+                            "button": "Button Testing",
+                            "sections": [
+                                {
+                                    "title": "Devices",
+                                    "rows": [
+                                        {"id": "row 1", "title": "Iphone", "description": ""},
+                                        {
+                                            "id": "row 2",
+                                            "title": "Samsung",
+                                            "description": "",
+                                        },
+                                    ],
+                                }
+                            ],
+                        },
+                    },
+                )
+
+                    # Assuming fetch_device_details requires a device name argument.
+                    # The device name should come from previous conversation context or set by some other logic.
+                    # device_name = "iphone 12"  # This is just an example. Replace with actual device name.
+                    # fetch_device_details(device_name)
+                elif message_id == "b2":
+                    gptresponse_dict[mobile] = True
+                elif message_id == "row 1":
+                    device_selected = "iphone 12"
+                    device_selectedd = device_selected
+                    messenger.send_message("Device selected: iphone 12", mobile)
+                    fetch_device_details(device_selected)
+                else:
+                    messenger.send_message("Unrecognized action.", mobile)
+
 
             elif message_type == "location":
                 message_location = messenger.get_location(data)
@@ -134,7 +174,9 @@ def hook():
                 message_longitude = message_location["longitude"]
                 logging.info("Location: %s, %s", message_latitude, message_longitude)
                 messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
-                fetch_device_details("iphone 12")
+                # fetch_device_details("iphone 12")
+                
+                # messenger.send_audio(audio="en-US-Wavenet-D.mp3", recipient_id="+919048806904",link=False)
 
             elif message_type == "image":
                 image = messenger.get_image(data)
@@ -173,7 +215,14 @@ def hook():
                 wav_filename = "en-US-Wavenet-D.wav"
                 mp3_filename = "en-US-Wavenet-D.mp3"
                 convert_wav_to_mp3(wav_filename, mp3_filename)
-
+                # media_id = messenger.upload_media(
+                # media='ml-IN-Wavenet-D.mp3',
+                # )['id']
+                # messenger.send_audio(
+                #   audio=media_id,
+                #   recipient_id=mobile,
+                #   link=False
+                # )
                 # Send the generated audio file using local path
                 send_local_audio(mp3_filename, mobile)
 
@@ -194,6 +243,34 @@ def hook():
                 logging.info("No new message")
     return "OK", 200
 
+def send_reply_button(recipient_id):
+    messenger.send_reply_button(
+        recipient_id=recipient_id,
+        button={
+            "type": "button",
+            "body": {
+                "text": "Please select one"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "b1",
+                            "title": "Select Device"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "b2",
+                            "title": "Ask more"
+                        }
+                    }
+                ]
+            }
+        },
+    )
 def text_to_wav(voice_name: str, text: str):
     language_code = "-".join(voice_name.split("-")[:2])
     text_input = texttospeech.SynthesisInput(text=text)
@@ -409,13 +486,13 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "You are a helpful assistant."
+        "content": "Context: Orca is an AI assistant that provides recommendations about devices based on user requirements."
     },
     {
         "role": "user",
         "content": message
     }]
-
+    
     # Get the response from the model
     response_text = get_response(formatted_conversation + payload)        
     store_message(user_id, "assistant", response_text)       
@@ -429,7 +506,7 @@ def get_response(conversation):
     api_key=os.environ.get("OPENAI_API_KEY"),
 )
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-4o",
         messages=conversation
     )
     return response.choices[0].message.content 
