@@ -130,21 +130,21 @@ def hook():
                 message_id = message_response[interactive_type]["id"]
                 message_text = message_response[interactive_type]["title"]
                 logging.info(f"Interactive Message; {message_id}: {message_text}")
+                device_names = load_device_names_from_json("deviceNames.json")
+                rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
+
                 # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
                 if message_id == "b1":
-                    messenger.send_message("Please enter the device name", mobile)
-                    device_names = load_device_names_from_json("deviceNames.json")
-                    rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
-
+                    messenger.send_message("Please select the device name", mobile)
                                     # Use the rows in the send_button call
                     messenger.send_button(
                         recipient_id=mobile,  # make sure 'mobile' contains the correct recipient id
                         button={
-                            "header": "Header Testing",
-                            "body": "Body Testing",
-                            "footer": "Footer Testing",
+                            "header": "",
+                            "body": "Devices List",
+                            "footer": "",
                             "action": {
-                                "button": "Button Testing",
+                                "button": "Select one device",
                                 "sections": [
                                     {
                                         "title": "Devices",
@@ -153,7 +153,7 @@ def hook():
                                 ],
                             },
                         },
-                )
+                    )
 
                                 # Assuming fetch_device_details requires a device name argument.
                                 # The device name should come from previous conversation context or set by some other logic.
@@ -167,6 +167,9 @@ def hook():
                     fetch_device_details(device_selected)    
                 else:
                         messenger.send_message(f"Device selected: {message_text}", mobile)
+                        res = get_device_response(message_text)
+                        print(type(res))
+                        messenger.send_message(res, mobile)
                         fetch_device_details(message_text)
 
 
@@ -591,7 +594,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides only recommendations about devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the deive name it must be provided."
+        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided"
     },
     {
         "role": "user",
@@ -613,6 +616,18 @@ def get_response(conversation):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=conversation
+    )
+    return response.choices[0].message.content 
+
+def get_device_response(conversation):
+    messages = [{"role": "user", "content": conversation}]
+    client = OpenAI(
+    # This is the default and can be omitted
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages
     )
     return response.choices[0].message.content 
 
