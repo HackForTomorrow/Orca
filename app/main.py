@@ -18,9 +18,9 @@ from pydub import AudioSegment
 from google.cloud import texttospeech
 from google.cloud import translate_v2 as translate
 from supabase import create_client, Client
-from datetime import datetime ,timezone
-
-
+from datetime import datetime ,timezone, timedelta
+import re
+import json
 # Initialize Flask App
 app = Flask(__name__)
 
@@ -38,7 +38,8 @@ if not access_token or not phone_number_id:
 messenger = WhatsApp(access_token, phone_number_id)
 VERIFY_TOKEN = "12345"
 user_greeted = {}
-openai_api_key = os.getenv('OPENAI_API_KEY')
+processed_image = {}
+openai_api_key = os.getenv("OPENAI_API_KEY")
 google_api_key = os.getenv("GOOGLE_API_KEY")
 service_account_path = "./orca-sa.json"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = service_account_path
@@ -60,13 +61,14 @@ def verify_token():
     return "Invalid verification token"
 
 gptresponse_dict = {}
+image_device_names = {}
 
 @app.post("/webhook")
 def hook():
    
     # Handle Webhook Subscriptions
     data = request.get_json()
-    global mobile
+    global mobile,processed_image
    
     
     changed_field = messenger.changed_field(data)
@@ -83,6 +85,7 @@ def hook():
                 # Send greeting and mark user as greeted
                 messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
                 user_greeted[mobile] = True
+                processed_image[mobile] = False
 
             if mobile not in gptresponse_dict:
                 gptresponse_dict[mobile] = True
@@ -99,7 +102,8 @@ def hook():
                         response = process_message(message)
                         messenger.send_message(response, mobile)
                         print(response)
-                        send_reply_button(mobile)
+                        if not processed_image.get(mobile):
+                                send_reply_button(mobile)
                         # Translate the response to Malayalam (ml)
                         translated_text = translate_text(response, "ml")
                         text_to_wav("ml-IN-Wavenet-D", translated_text)
@@ -118,6 +122,7 @@ def hook():
                         user_greeted[mobile] = True
 
 
+
             elif message_type == "interactive":
                 gptresponse_dict[mobile] = False
                 message_response = messenger.get_interactive_response(data)
@@ -128,44 +133,47 @@ def hook():
                 # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
                 if message_id == "b1":
                     messenger.send_message("Please enter the device name", mobile)
+                    device_names = load_device_names_from_json("deviceNames.json")
+                    rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
+
+                                    # Use the rows in the send_button call
                     messenger.send_button(
-                    recipient_id=mobile,
-                    button={
-                        "header": "Header Testing",
-                        "body": "Body Testing",
-                        "footer": "Footer Testing",
-                        "action": {
-                            "button": "Button Testing",
-                            "sections": [
-                                {
-                                    "title": "Devices",
-                                    "rows": [
-                                        {"id": "row 1", "title": "Iphone", "description": ""},
-                                        {
-                                            "id": "row 2",
-                                            "title": "Samsung",
-                                            "description": "",
-                                        },
-                                    ],
-                                }
-                            ],
+                        recipient_id=mobile,  # make sure 'mobile' contains the correct recipient id
+                        button={
+                            "header": "Header Testing",
+                            "body": "Body Testing",
+                            "footer": "Footer Testing",
+                            "action": {
+                                "button": "Button Testing",
+                                "sections": [
+                                    {
+                                        "title": "Devices",
+                                        "rows": rows,
+                                    }
+                                ],
+                            },
                         },
-                    },
                 )
 
-                    # Assuming fetch_device_details requires a device name argument.
-                    # The device name should come from previous conversation context or set by some other logic.
-                    # device_name = "iphone 12"  # This is just an example. Replace with actual device name.
-                    # fetch_device_details(device_name)
+                                # Assuming fetch_device_details requires a device name argument.
+                                # The device name should come from previous conversation context or set by some other logic.
+                                # device_name = "iphone 12"  # This is just an example. Replace with actual device name.
+                                # fetch_device_details(device_name)
                 elif message_id == "b2":
                     gptresponse_dict[mobile] = True
-                elif message_id == "row 1":
-                    device_selected = "iphone 12"
-                    device_selectedd = device_selected
-                    messenger.send_message("Device selected: iphone 12", mobile)
-                    fetch_device_details(device_selected)
+                elif message_id == "b3":
+                    device_selected = image_device_names[mobile]
+                    messenger.send_message(f"Device selected: {device_selected}", mobile)
+                    fetch_device_details(device_selected)    
                 else:
-                    messenger.send_message("Unrecognized action.", mobile)
+                        messenger.send_message(f"Device selected: {message_text}", mobile)
+                        fetch_device_details(message_text)
+
+
+
+# Notes:
+# - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
+# - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
 
 
             elif message_type == "location":
@@ -182,10 +190,29 @@ def hook():
                 image = messenger.get_image(data)
                 image_id, mime_type = image["id"], image["mime_type"]
                 image_url = messenger.query_media_url(image_id)
-                image_filename = messenger.download_media(image_url, mime_type)  # Assumes this function returns the local file path
+                image_filename = messenger.download_media(image_url, mime_type)
                 logging.info(f"Processing image from file: {image_filename}")
-                response = process_image(image_filename)
-                messenger.send_message(response, mobile)
+                
+                # Process the image and get an initial response
+                initial_response = process_image(image_filename)
+
+                # Save the initial response into the conversation history
+                store_message(mobile, "assistant", initial_response)
+
+                # Use the existing 'process_message' function to get the name of the device from the response.
+                gpt_prompt_for_device_name = "From the following description, return only the device name as a single word ,not as a sentence for example only (for example Apple Iphone,Samsung s24,etc): " + initial_response
+                device_name_response = process_message(gpt_prompt_for_device_name)
+                
+                # Send the initial response followed by the device name to WhatsApp
+                messenger.send_message(initial_response, mobile)
+                if device_name_response:
+                    image_device_names[mobile] = device_name_response
+                
+                # Set processed_image to True for this mobile number
+                processed_image[mobile] = True
+
+                # Send the image specific reply buttons
+                send_image_reply_button(mobile)
                 logging.info(f"{mobile} sent image {image_id}")
 
             elif message_type == "video":
@@ -243,6 +270,18 @@ def hook():
                 logging.info("No new message")
     return "OK", 200
 
+
+
+## this function fetches the title from the created json file as button to whstapp user
+def load_device_names_from_json(file_path):
+    # Read the JSON file
+    with open(file_path, "r") as f:
+        # Deserialize JSON content into a Python object (in this case, a list)
+        device_names = json.load(f)
+    return device_names
+
+
+
 def send_reply_button(recipient_id):
     messenger.send_reply_button(
         recipient_id=recipient_id,
@@ -271,6 +310,37 @@ def send_reply_button(recipient_id):
             }
         },
     )
+
+def send_image_reply_button(recipient_id):
+    messenger.send_reply_button(
+        recipient_id=recipient_id,
+        button={
+            "type": "button",
+            "body": {
+                "text": "Please select one"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "b3",
+                            "title": "Buy Now"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "b2",
+                            "title": "Ask more"
+                        }
+                    }
+                ]
+            }
+        },
+    )
+
+
 def text_to_wav(voice_name: str, text: str):
     language_code = "-".join(voice_name.split("-")[:2])
     text_input = texttospeech.SynthesisInput(text=text)
@@ -301,6 +371,35 @@ def encode_image(image_path):
     with open(image_path, "rb") as image_file:
         return base64.b64encode(image_file.read()).decode('utf-8')
 
+
+# this is the  function for sendning the device title as json file by chatgpt
+
+def extract_device_names_and_save_to_json(response):
+    # Split the response by newline to get lines
+    lines = response.split('\n')
+
+    # Initialize an empty list to hold device names
+    device_names = []
+
+    # Define a regex pattern to extract device names (assuming they follow '### ')
+    pattern = r"^### (.*)"
+
+    # Loop over lines and use regex to match device names
+    for line in lines:
+        match = re.match(pattern, line)
+        
+        # If a match is found, append the device name to the device_names list
+        if match:
+            # The actual device name is in the first group of the match
+            device_names.append(match.group(1))
+
+    # Save the device names to a JSON file
+    with open("deviceNames.json", "w") as f:
+        json.dump(device_names, f)
+
+    print("Device names have been saved to deviceNames.json")
+
+
 def process_image(image_filename):
     """
     Process the locally downloaded image and return a description using GPT-4's vision capabilities.
@@ -321,7 +420,7 @@ def process_image(image_filename):
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "If the image is of a phone, identify the phone and fetch the specifications and details Else reply Sorry, I can't help with that. Can you try another image"},
+                        {"type": "text", "text": "If the image is of a device or electronic appliance and fetch the specifications and details Else reply Sorry, I can't help with that. Can you try another image"},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
                 }
@@ -486,7 +585,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides recommendations about devices based on user requirements."
+        "content": "Context: Orca is an AI assistant that provides only recommendations about devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the deive name it must be provided."
     },
     {
         "role": "user",
@@ -496,7 +595,7 @@ def process_message(message):
     # Get the response from the model
     response_text = get_response(formatted_conversation + payload)        
     store_message(user_id, "assistant", response_text)       
-
+    extract_device_names_and_save_to_json(response_text)
     return response_text
 
 
@@ -521,7 +620,15 @@ def store_message(user_id, role, content):
     supabase_client.table("conversations").insert(data).execute()
 
 def get_conversation(user_id):
-    response = supabase_client.table("conversations").select("*").eq("user_id", user_id).order("created_at").execute()
+    five_minutes_ago = datetime.now(timezone.utc) - timedelta(minutes=5)
+    
+    response = supabase_client.table("conversations")\
+        .select("*")\
+        .eq("user_id", user_id)\
+        .gt("created_at", five_minutes_ago.isoformat())\
+        .order("created_at")\
+        .execute()
+    
     return response.data
 
 

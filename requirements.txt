@@ -5,9 +5,9 @@ whisper
 requests
 Pillow
 heyoo
-dotenv
 google.cloud.texttospeech
-langchain.schema
 langchain_openai
+langchain
 pydub 
 supabase
+google-cloud-translate
