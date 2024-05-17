@@ -62,13 +62,14 @@ def verify_token():
 
 gptresponse_dict = {}
 image_device_names = {}
+user_preferences = {}
 
 @app.post("/webhook")
 def hook():
    
     # Handle Webhook Subscriptions
     data = request.get_json()
-    global mobile,processed_image
+    global mobile,processed_image,user_language
    
     
     changed_field = messenger.changed_field(data)
@@ -84,6 +85,8 @@ def hook():
             if not user_greeted.get(mobile, False):
                 # Send greeting and mark user as greeted
                 messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
+                messenger.send_message('Please select your language.', mobile)
+                send_language_selection(mobile)
                 user_greeted[mobile] = True
                 processed_image[mobile] = False
 
@@ -100,13 +103,15 @@ def hook():
                     if gptresponse_dict.get(mobile):
                         # Get a response from GPT
                         response = process_message(message)
-                        messenger.send_message(response, mobile)
+                        translated_text = translate_text(response, user_language)
+                        messenger.send_message(translated_text,mobile)
+                        # messenger.send_message(response, mobile)
                         print(response)
                         if not processed_image.get(mobile):
                                 send_reply_button(mobile)
                         # Translate the response to Malayalam (ml)
-                        translated_text = translate_text(response, "ml")
-                        text_to_wav("ml-IN-Wavenet-D", translated_text)
+                       
+                        # text_to_wav("ml-IN-Wavenet-D", translated_text)
                         
                         # Disable GPT response for subsequent messages
                         gptresponse_dict[mobile] = False
@@ -161,16 +166,27 @@ def hook():
                                 # fetch_device_details(device_name)
                 elif message_id == "b2":
                     gptresponse_dict[mobile] = True
+
                 elif message_id == "b3":
                     device_selected = image_device_names[mobile]
                     messenger.send_message(f"Device selected: {device_selected}", mobile)
-                    fetch_device_details(device_selected)    
+                    fetch_device_details(device_selected)  
+
+                elif message_id.startswith('lang_'):
+                    selected_language = message_id.split('_')[1] 
+                    logging.info(f"Language selected: {selected_language}")
+                    user_preferences[mobile] = {'language': selected_language}
+                    user_language = user_preferences.get(mobile, {}).get('language')
+                    messenger.send_message(f"You have selected {message_text}.", mobile)
+                    gptresponse_dict[mobile] = True
+
                 else:
-                        messenger.send_message(f"Device selected: {message_text}", mobile)
-                        res = get_device_response(message_text)
-                        print(type(res))
-                        messenger.send_message(res, mobile)
-                        fetch_device_details(message_text)
+                    messenger.send_message(f"Device selected: {message_text}", mobile)
+                    res = get_device_response(message_text)
+                    trans = translate_text(res,user_language)
+                    print(type(res))
+                    messenger.send_message(trans, mobile)
+                    fetch_device_details(message_text)
 
 
 
@@ -279,6 +295,43 @@ def hook():
                 logging.info("No new message")
     return "OK", 200
 
+
+def send_language_selection(recipient_id):
+    messenger.send_reply_button(
+        recipient_id=recipient_id,
+        button={
+            "type": "button",
+            "body": {
+                "text": "Please select a language"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_en",
+                            "title": "English"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_ml",
+                            "title": "Malayalam"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_hi",
+                            "title": "Hindi"
+                        }
+                    }
+                    # Add more language options here...
+                ]
+            }
+        },
+    )
 
 
 ## this function fetches the title from the created json file as button to whstapp user
