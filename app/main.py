@@ -176,6 +176,12 @@ def hook():
 # - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
 
 
+
+# Notes:
+# - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
+# - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
+
+
             elif message_type == "location":
                 message_location = messenger.get_location(data)
                 message_latitude = message_location["latitude"]
