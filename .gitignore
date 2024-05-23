@@ -92,3 +92,7 @@ target/
 .db
 
 orca-sa.json
+temp.ogg
+en-US-Wavenet-D.wav
+en-US-Wavenet-D.mp3
+deviceNames.json

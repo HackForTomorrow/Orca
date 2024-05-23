@@ -261,28 +261,29 @@ def hook():
 
                 # Converts the audio file to text
                 transcription_text = convert_audio_to_text(audio_filename)
-
+                if gptresponse_dict.get(mobile):
                 # Process the transcribed text and send a response
-                response = process_message(transcription_text)
-                print(response)
-                messenger.send_message(response, mobile)
-                print(transcription_text)
+                    response = process_message(transcription_text)
+                    print(response)
+                    messenger.send_message(response, mobile)
+                    print(transcription_text)
+                    if not processed_image.get(mobile):
+                        send_reply_button(mobile)
 
-                # Text to WAV using Google Cloud Text-to-Speech
-                text_to_wav("en-US-Wavenet-D", response)
-                wav_filename = "en-US-Wavenet-D.wav"
-                mp3_filename = "en-US-Wavenet-D.mp3"
-                convert_wav_to_mp3(wav_filename, mp3_filename)
-                # media_id = messenger.upload_media(
-                # media='ml-IN-Wavenet-D.mp3',
-                # )['id']
-                # messenger.send_audio(
-                #   audio=media_id,
-                #   recipient_id=mobile,
-                #   link=False
-                # )
-                # Send the generated audio file using local path
-                send_local_audio(mp3_filename, mobile)
+                    # Text to WAV using Google Cloud Text-to-Speech
+                    text_to_wav("en-US-Wavenet-D", response)
+                    # media_id = messenger.upload_media(
+                    # media='ml-IN-Wavenet-D.wav',
+                    # )['id']
+                    # messenger.send_audio(
+                    #     audio=media_id,
+                    #     recipient_id=mobile,
+                    #     link=False
+                    # )
+                    # Send the generated audio file using local path
+                    send_local_audio("en-US-Wavenet-D.wav", mobile)
+                    gptresponse_dict[mobile] = False
+
 
             elif message_type == "document":
                 file = messenger.get_document(data)
@@ -576,11 +577,6 @@ def fetch_device_details(device_name):
 
     return None
 
-
-def convert_wav_to_mp3(wav_filename, mp3_filename):
-    audio = AudioSegment.from_wav(wav_filename)
-    audio.export(mp3_filename, format="mp3")
-
 def send_local_audio(file_path, recipient_id):
     url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
     headers = {
@@ -588,7 +584,7 @@ def send_local_audio(file_path, recipient_id):
     }
 
     # Determine correct MIME type for the file and set the MIME type in the upload request.
-    mime_type = 'audio/mpeg'  # Assuming you're using MP3 format; adjust as needed
+    mime_type = 'audio/wav'  # Assuming you're using MP3 format; adjust as needed
     with open(file_path, 'rb') as file_data:
         files = {
             'file': (os.path.basename(file_path), file_data, mime_type)
