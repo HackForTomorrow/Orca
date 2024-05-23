@@ -213,9 +213,6 @@ def hook():
                 message_longitude = message_location["longitude"]
                 logging.info("Location: %s, %s", message_latitude, message_longitude)
                 messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
-                # fetch_device_details("iphone 12")
-                
-                # messenger.send_audio(audio="en-US-Wavenet-D.mp3", recipient_id="+919048806904",link=False)
 
             elif message_type == "image":
                 image = messenger.get_image(data)
@@ -615,33 +612,7 @@ def send_local_audio(file_path, recipient_id):
     else:
         logging.error(f"Failed to upload media. Status Code: {response_media.status_code}, Response: {response_media.text}")
 
-
-
-def generate_prompt(description, product_keywords):
-    prompt = "User Description: " + description + "i dont have any technical knowledge.explain it to me considering that"
-    if product_keywords:
-        prompt += " " + ", ".join(product_keywords)
-    return prompt
-
-def train_model(prompt, context):
-    global device_selectedd
-    chat_model = ChatOpenAI(
-        temperature=0,  
-        model="gpt-4o",
-        openai_api_key=openai_api_key,
-        max_tokens=1000
-    )
-    output = chat_model([
-        HumanMessage(content=context),  
-        HumanMessage(content=prompt)  
-    ])
-
-    # Get the response from the model
-    response = output.content
-    global engtext
-    engtext = response
-    print(response)
-    return response  
+ 
 
 def process_message(message):
     user_id = mobile  # Ensure that this is defined globally or passed as an argument
@@ -711,18 +682,6 @@ def get_conversation(user_id):
         .execute()
     
     return response.data
-
-
-def extract_product_keywords(description):
-    # Read keywords from keywords.txt
-    with open("keywords.txt", "r") as file:
-        relevant_keywords = [line.strip() for line in file]
-
-    # Check if any product keywords are present in the description
-    found_keywords = [keyword for keyword in relevant_keywords if keyword in description]
-    print(found_keywords)
-    return found_keywords
-
 
 
 if __name__ == "__main__":
