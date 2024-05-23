@@ -79,13 +79,20 @@ def hook():
             name = messenger.get_name(data)
             message_type = messenger.get_message_type(data)
             logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
-
+            
+            user_result = supabase_client.table("users").select("*").eq("mobile", mobile).execute()
+            user_registered = len(user_result.data) > 0
             # Check if the user has been greeted already
-            if not user_greeted.get(mobile, False):
-                # Send greeting and mark user as greeted
-                messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
-                user_greeted[mobile] = True
-                processed_image[mobile] = False
+            if mobile not in user_greeted:
+                    if not user_registered:
+                        # User is not registered, so register and send the first greeting
+                        supabase_client.table("users").insert({"mobile": mobile, "name": name}).execute()
+                        messenger.send_message(f"Hello {name}, Thank you for choosing Orca! I am here to assist you. How can I help you today? ", mobile)
+                    else:
+                        # User is registered, send normal greeting
+                        messenger.send_message(f"Welcome back {name}, how can I assist you today?", mobile)
+                    user_greeted[mobile] = True
+                    processed_image[mobile] = False
 
             if mobile not in gptresponse_dict:
                 gptresponse_dict[mobile] = True
