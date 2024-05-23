@@ -85,7 +85,6 @@ def hook():
             if not user_greeted.get(mobile, False):
                 # Send greeting and mark user as greeted
                 messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
-                messenger.send_message('Please select your language.', mobile)
                 send_language_selection(mobile)
                 user_greeted[mobile] = True
                 processed_image[mobile] = False
@@ -555,6 +554,11 @@ def fetch_device_details(device_name):
                 platform = result.get('source')
                 price = result.get('price')
                 link = result.get('link')
+                image_url = result.get('thumbnail')
+                messenger.send_image(
+                        image=image_url,
+                        recipient_id=mobile,
+                 )
                 message = f"Platform: {platform}\nPrice: {price}\nURL: {link}\n\n"
                 messenger.send_message(message, mobile)
                 print(message)
