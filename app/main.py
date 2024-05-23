@@ -62,13 +62,14 @@ def verify_token():
 
 gptresponse_dict = {}
 image_device_names = {}
+user_preferences = {}
 
 @app.post("/webhook")
 def hook():
    
     # Handle Webhook Subscriptions
     data = request.get_json()
-    global mobile,processed_image
+    global mobile,processed_image,user_language
    
     
     changed_field = messenger.changed_field(data)
@@ -91,6 +92,7 @@ def hook():
                     else:
                         # User is registered, send normal greeting
                         messenger.send_message(f"Welcome back {name}, how can I assist you today?", mobile)
+                    send_language_selection(mobile)
                     user_greeted[mobile] = True
                     processed_image[mobile] = False
 
@@ -107,13 +109,15 @@ def hook():
                     if gptresponse_dict.get(mobile):
                         # Get a response from GPT
                         response = process_message(message)
-                        messenger.send_message(response, mobile)
+                        translated_text = translate_text(response, user_language)
+                        messenger.send_message(translated_text,mobile)
+                        # messenger.send_message(response, mobile)
                         print(response)
                         if not processed_image.get(mobile):
                                 send_reply_button(mobile)
                         # Translate the response to Malayalam (ml)
-                        translated_text = translate_text(response, "ml")
-                        text_to_wav("ml-IN-Wavenet-D", translated_text)
+                       
+                        # text_to_wav("ml-IN-Wavenet-D", translated_text)
                         
                         # Disable GPT response for subsequent messages
                         gptresponse_dict[mobile] = False
@@ -137,21 +141,21 @@ def hook():
                 message_id = message_response[interactive_type]["id"]
                 message_text = message_response[interactive_type]["title"]
                 logging.info(f"Interactive Message; {message_id}: {message_text}")
+                device_names = load_device_names_from_json("deviceNames.json")
+                rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
+
                 # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
                 if message_id == "b1":
-                    messenger.send_message("Please enter the device name", mobile)
-                    device_names = load_device_names_from_json("deviceNames.json")
-                    rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
-
+                    messenger.send_message("Please select the device name", mobile)
                                     # Use the rows in the send_button call
                     messenger.send_button(
                         recipient_id=mobile,  # make sure 'mobile' contains the correct recipient id
                         button={
-                            "header": "Header Testing",
-                            "body": "Body Testing",
-                            "footer": "Footer Testing",
+                            "header": "",
+                            "body": "Devices List",
+                            "footer": "",
                             "action": {
-                                "button": "Button Testing",
+                                "button": "Select one device",
                                 "sections": [
                                     {
                                         "title": "Devices",
@@ -160,7 +164,7 @@ def hook():
                                 ],
                             },
                         },
-                )
+                    )
 
                                 # Assuming fetch_device_details requires a device name argument.
                                 # The device name should come from previous conversation context or set by some other logic.
@@ -168,13 +172,27 @@ def hook():
                                 # fetch_device_details(device_name)
                 elif message_id == "b2":
                     gptresponse_dict[mobile] = True
+
                 elif message_id == "b3":
                     device_selected = image_device_names[mobile]
                     messenger.send_message(f"Device selected: {device_selected}", mobile)
-                    fetch_device_details(device_selected)    
+                    fetch_device_details(device_selected)  
+
+                elif message_id.startswith('lang_'):
+                    selected_language = message_id.split('_')[1] 
+                    logging.info(f"Language selected: {selected_language}")
+                    user_preferences[mobile] = {'language': selected_language}
+                    user_language = user_preferences.get(mobile, {}).get('language')
+                    messenger.send_message(f"You have selected {message_text}.", mobile)
+                    gptresponse_dict[mobile] = True
+
                 else:
-                        messenger.send_message(f"Device selected: {message_text}", mobile)
-                        fetch_device_details(message_text)
+                    messenger.send_message(f"Device selected: {message_text}", mobile)
+                    res = get_device_response(message_text)
+                    trans = translate_text(res,user_language)
+                    print(type(res))
+                    messenger.send_message(trans, mobile)
+                    fetch_device_details(message_text)
 
 
 
@@ -283,6 +301,43 @@ def hook():
                 logging.info("No new message")
     return "OK", 200
 
+
+def send_language_selection(recipient_id):
+    messenger.send_reply_button(
+        recipient_id=recipient_id,
+        button={
+            "type": "button",
+            "body": {
+                "text": "Please select a language"
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_en",
+                            "title": "English"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_ml",
+                            "title": "Malayalam"
+                        }
+                    },
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "lang_hi",
+                            "title": "Hindi"
+                        }
+                    }
+                    # Add more language options here...
+                ]
+            }
+        },
+    )
 
 
 ## this function fetches the title from the created json file as button to whstapp user
@@ -506,6 +561,11 @@ def fetch_device_details(device_name):
                 platform = result.get('source')
                 price = result.get('price')
                 link = result.get('link')
+                image_url = result.get('thumbnail')
+                messenger.send_image(
+                        image=image_url,
+                        recipient_id=mobile,
+                 )
                 message = f"Platform: {platform}\nPrice: {price}\nURL: {link}\n\n"
                 messenger.send_message(message, mobile)
                 print(message)
@@ -598,7 +658,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides only recommendations about devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the deive name it must be provided."
+        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided"
     },
     {
         "role": "user",
@@ -620,6 +680,18 @@ def get_response(conversation):
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=conversation
+    )
+    return response.choices[0].message.content 
+
+def get_device_response(conversation):
+    messages = [{"role": "user", "content": conversation}]
+    client = OpenAI(
+    # This is the default and can be omitted
+    api_key=os.environ.get("OPENAI_API_KEY"),
+)
+    response = client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages
     )
     return response.choices[0].message.content 
 
