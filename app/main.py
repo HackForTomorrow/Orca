@@ -80,6 +80,8 @@ def hook():
     if changed_field == "messages":
         new_message = messenger.is_message(data)
         if new_message:
+            message_id= messenger.get_message_id(data)
+            mark_whatsapp_message_as_read(message_id)
             mobile = messenger.get_mobile(data)
             name = messenger.get_name(data)
             message_type = messenger.get_message_type(data)
@@ -855,6 +857,23 @@ def send_whatsapp_location_request():
     }
     
     response = requests.post(url, headers=headers, json=payload)
+    return response.json()
+
+def mark_whatsapp_message_as_read(message_id):
+    url = f'https://graph.facebook.com/v20.0/{phone_number_id}/messages'
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "messaging_product": "whatsapp",
+        "status": "read",
+        "message_id": message_id
+    }
+
+    response = requests.post(url, headers=headers, json=data)
     return response.json()
 
 
