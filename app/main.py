@@ -69,7 +69,7 @@ def hook():
    
     # Handle Webhook Subscriptions
     data = request.get_json()
-    global mobile,processed_image,user_language
+    global mobile,processed_image
    
     
     changed_field = messenger.changed_field(data)
@@ -80,7 +80,7 @@ def hook():
             name = messenger.get_name(data)
             message_type = messenger.get_message_type(data)
             logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
-            
+            record_session(mobile)
             user_result = supabase_client.table("users").select("*").eq("mobile", mobile).execute()
             user_registered = len(user_result.data) > 0
             # Check if the user has been greeted already
@@ -92,7 +92,7 @@ def hook():
                     else:
                         # User is registered, send normal greeting
                         messenger.send_message(f"Welcome back {name}, how can I assist you today?", mobile)
-                    send_language_selection(mobile)
+                    # send_language_selection(mobile)
                     user_greeted[mobile] = True
                     processed_image[mobile] = False
 
@@ -101,6 +101,8 @@ def hook():
             # Now handle different message types without repeating the greeting
             if message_type == "text":
                 message = messenger.get_message(data)
+                print('messageeee',message)
+                detected_language = detect_lang(message)
                 greetings = ["hi", "hello"]
                 is_greeting = any(greeting in message.lower() for greeting in greetings)
 
@@ -108,8 +110,10 @@ def hook():
             # Process non-greeting messages
                     if gptresponse_dict.get(mobile):
                         # Get a response from GPT
-                        response = process_message(message)
-                        translated_text = translate_text(response, user_language)
+                        translated_message = translate_text(message,'en')
+                        print('translateeeee',translated_message)
+                        response = process_message(translated_message)
+                        translated_text = translate_text(response,detected_language)
                         messenger.send_message(translated_text,mobile)
                         # messenger.send_message(response, mobile)
                         print(response)
@@ -178,18 +182,20 @@ def hook():
                     messenger.send_message(f"Device selected: {device_selected}", mobile)
                     fetch_device_details(device_selected)  
 
-                elif message_id.startswith('lang_'):
-                    selected_language = message_id.split('_')[1] 
-                    logging.info(f"Language selected: {selected_language}")
-                    user_preferences[mobile] = {'language': selected_language}
-                    user_language = user_preferences.get(mobile, {}).get('language')
-                    messenger.send_message(f"You have selected {message_text}.", mobile)
-                    gptresponse_dict[mobile] = True
+                # elif message_id.startswith('lang_'):
+                #     selected_language = message_id.split('_')[1] 
+                #     logging.info(f"Language selected: {selected_language}")
+                #     user_preferences[mobile] = {'language': selected_language}
+                #     user_language = user_preferences.get(mobile, {}).get('language')
+                #     messenger.send_message(f"You have selected {message_text}.", mobile)
+                #     gptresponse_dict[mobile] = True
 
                 else:
                     messenger.send_message(f"Device selected: {message_text}", mobile)
+                    detected_language = detect_lang(message_text)
+                    print("huuuuuuuu",detected_language)
                     res = get_device_response(message_text)
-                    trans = translate_text(res,user_language)
+                    trans = translate_text(res,detected_language)
                     print(type(res))
                     messenger.send_message(trans, mobile)
                     fetch_device_details(message_text)
@@ -300,42 +306,42 @@ def hook():
     return "OK", 200
 
 
-def send_language_selection(recipient_id):
-    messenger.send_reply_button(
-        recipient_id=recipient_id,
-        button={
-            "type": "button",
-            "body": {
-                "text": "Please select a language"
-            },
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_en",
-                            "title": "English"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_ml",
-                            "title": "Malayalam"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_hi",
-                            "title": "Hindi"
-                        }
-                    }
-                    # Add more language options here...
-                ]
-            }
-        },
-    )
+# def send_language_selection(recipient_id):
+#     messenger.send_reply_button(
+#         recipient_id=recipient_id,
+#         button={
+#             "type": "button",
+#             "body": {
+#                 "text": "Please select a language"
+#             },
+#             "action": {
+#                 "buttons": [
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_en",
+#                             "title": "English"
+#                         }
+#                     },
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_ml",
+#                             "title": "Malayalam"
+#                         }
+#                     },
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_hi",
+#                             "title": "Hindi"
+#                         }
+#                     }
+#                     # Add more language options here...
+#                 ]
+#             }
+#         },
+#     )
 
 
 ## this function fetches the title from the created json file as button to whstapp user
@@ -526,10 +532,16 @@ def convert_audio_to_text(audio_filename):
 client1 = translate.Client()
 
 
+def detect_lang(message)-> str:
+    lang = client1.detect_language(message)
+    detected = lang['language']
+    print("languageeeeee",lang['language'])
+    return detected
+
+
 def translate_text(text, target_language) -> str:
     # Call the API translate method assuming it returns a dictionary with the translation
     result = client1.translate(text, target_language=target_language)
-    
     # Accessing the translated text from the result dictionary
     translated_text = result.get('translatedText', '')
     
@@ -538,9 +550,8 @@ def translate_text(text, target_language) -> str:
         
     # Formatting each occurrence of '###' by ensuring it starts with a new line if needed
     formatted_text = re.sub(r'###', r'\n-------------------------------------\n', translated_text)
-
-    # Formatting bold text by wrapping with newlines if needed (matching *bold*)
-    formatted_text = re.sub(r'(?m)\\([^]+)\\', r'\n\1*\n', formatted_text)
+    # Formatting bold text by wrapping with newlines if needed (matching **bold**)
+    formatted_text = re.sub(r'(?m)\*([^*]+)\*', r'\n*\1*\n', formatted_text)
     
     print("## Original Text")
     print("> {}".format(result['input']))
@@ -642,7 +653,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided"
+        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided.Device specifications strings should be enclosed in * and * instead of ** and **"
     },
     {
         "role": "user",
@@ -678,6 +689,48 @@ def get_device_response(conversation):
         messages=messages
     )
     return response.choices[0].message.content 
+
+def should_start_new_session(mobile: str) -> bool:
+    # Define the threshold for when to consider starting a new session
+    session_threshold = timedelta(minutes=5)
+    
+    # Get the current time in UTC
+    now_utc = datetime.now(timezone.utc)
+    
+    # Query the 'sessions' table for the most recent session by 'mobile'
+    response = supabase_client.table("sessions")\
+        .select("timestamp")\
+        .eq("mobile", mobile)\
+        .order("timestamp")\
+        .limit(1)\
+        .execute()
+        
+    if response.data:
+        # Parse the last session's timestamp and convert it to UTC
+        last_session_timestamp = response.data[0]['timestamp']
+        last_session_time = datetime.fromisoformat(last_session_timestamp).replace(tzinfo=timezone.utc)
+        
+        # Determine if the last session is older than the session threshold
+        if now_utc - last_session_time > session_threshold:
+            return True
+    else:
+        # No existing session for this mobile number, which means we should start a new session
+        return True
+    
+    # Existing session is within the threshold limit
+    return False
+    
+
+def record_session(mobile):
+    if should_start_new_session(mobile):
+        # Insert or update the session's timestamp to the current time for this mobile number
+        supabase_client.table("sessions")\
+            .insert({"mobile": mobile, "timestamp": datetime.now(timezone.utc).isoformat()}, upsert=True)\
+            .execute()
+        # Return True to indicate that a new session was started
+        return True
+    # Return False to indicate that the existing session was kept alive
+    return False
 
 def store_message(user_id, role, content):
     data = {
