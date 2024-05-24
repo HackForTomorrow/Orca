@@ -11,3 +11,5 @@ langchain
 pydub 
 supabase
 google-cloud-translate
+geopy
+serpapi

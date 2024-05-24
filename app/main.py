@@ -21,6 +21,9 @@ from supabase import create_client, Client
 from datetime import datetime ,timezone, timedelta
 import re
 import json
+import serpapi
+
+
 # Initialize Flask App
 app = Flask(__name__)
 
@@ -31,6 +34,7 @@ supabase_key = os.getenv("SUPABASE_KEY")
 supabase_client: Client = create_client(supabase_url, supabase_key)
 access_token = os.getenv("ACCESS_TOKEN")
 phone_number_id = os.getenv("PHONE_NUMBER_ID")
+serp_api=os.getenv("SERP_API")
 if not access_token or not phone_number_id:
     logging.error("Missing ACCESS_TOKEN or PHONE_NUMBER_ID environment variable")
     exit(1)
@@ -69,7 +73,7 @@ def hook():
    
     # Handle Webhook Subscriptions
     data = request.get_json()
-    global mobile,processed_image,user_language
+    global mobile,processed_image
    
     
     changed_field = messenger.changed_field(data)
@@ -80,7 +84,7 @@ def hook():
             name = messenger.get_name(data)
             message_type = messenger.get_message_type(data)
             logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
-            
+            record_session(mobile)
             user_result = supabase_client.table("users").select("*").eq("mobile", mobile).execute()
             user_registered = len(user_result.data) > 0
             # Check if the user has been greeted already
@@ -89,10 +93,11 @@ def hook():
                         # User is not registered, so register and send the first greeting
                         supabase_client.table("users").insert({"mobile": mobile, "name": name}).execute()
                         messenger.send_message(f"Hello {name}, Thank you for choosing Orca! I am here to assist you. How can I help you today? ", mobile)
+                        
                     else:
                         # User is registered, send normal greeting
-                        messenger.send_message(f"Welcome back {name}, how can I assist you today?", mobile)
-                    send_language_selection(mobile)
+                        messenger.send_message(f"Welcome back {name} 😁, how can I assist you today?", mobile)
+                    # send_language_selection(mobile)
                     user_greeted[mobile] = True
                     processed_image[mobile] = False
 
@@ -101,6 +106,8 @@ def hook():
             # Now handle different message types without repeating the greeting
             if message_type == "text":
                 message = messenger.get_message(data)
+                print('messageeee',message)
+                detected_language = detect_lang(message)
                 greetings = ["hi", "hello"]
                 is_greeting = any(greeting in message.lower() for greeting in greetings)
 
@@ -108,8 +115,10 @@ def hook():
             # Process non-greeting messages
                     if gptresponse_dict.get(mobile):
                         # Get a response from GPT
-                        response = process_message(message)
-                        translated_text = translate_text(response, user_language)
+                        translated_message = translate_text(message,'en')
+                        print('translateeeee',translated_message)
+                        response = process_message(translated_message)
+                        translated_text = translate_text(response,detected_language)
                         messenger.send_message(translated_text,mobile)
                         # messenger.send_message(response, mobile)
                         print(response)
@@ -178,21 +187,32 @@ def hook():
                     messenger.send_message(f"Device selected: {device_selected}", mobile)
                     fetch_device_details(device_selected)  
 
-                elif message_id.startswith('lang_'):
-                    selected_language = message_id.split('_')[1] 
-                    logging.info(f"Language selected: {selected_language}")
-                    user_preferences[mobile] = {'language': selected_language}
-                    user_language = user_preferences.get(mobile, {}).get('language')
-                    messenger.send_message(f"You have selected {message_text}.", mobile)
-                    gptresponse_dict[mobile] = True
+
+                elif message_id=="b4":
+                    response = send_whatsapp_location_request()
+                    
+                    print(response)
+
+                # elif message_id.startswith('lang_'):
+                #     selected_language = message_id.split('_')[1] 
+                #     logging.info(f"Language selected: {selected_language}")
+                #     user_preferences[mobile] = {'language': selected_language}
+                #     user_language = user_preferences.get(mobile, {}).get('language')
+                #     messenger.send_message(f"You have selected {message_text}.", mobile)
+                #     gptresponse_dict[mobile] = True
 
                 else:
                     messenger.send_message(f"Device selected: {message_text}", mobile)
+                    detected_language = detect_lang(message_text)
+                    print("huuuuuuuu",detected_language)
                     res = get_device_response(message_text)
-                    trans = translate_text(res,user_language)
+                    trans = translate_text(res,detected_language)
                     print(type(res))
                     messenger.send_message(trans, mobile)
                     fetch_device_details(message_text)
+                    send_whatsapp_location_request()
+
+
 
 
 
@@ -212,7 +232,45 @@ def hook():
                 message_latitude = message_location["latitude"]
                 message_longitude = message_location["longitude"]
                 logging.info("Location: %s, %s", message_latitude, message_longitude)
-                messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
+                # messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
+                # location_name = get_location_name(message_latitude, message_longitude)
+                # messenger.send_message(f"Location: {location_name}", mobile)
+                params = {
+                    "engine": "google_maps",
+                    "q": f"electronics store near me ",
+                    "ll":"@{lat},{lon},15.1z".format(lat=message_latitude, lon=message_longitude),
+                    "type": "search",
+                    "api_key": "e1ccc210769c27c7d9428210ded95882c315b66fb08d03de78806aacebfd9454"
+                    }
+
+                search = serpapi.search(params)
+                results = search.as_dict()
+                local_results = results.get("local_results", [])
+
+                # Limit the response to the nearest five shops if there are more than five
+                nearest_shops = local_results[:5]
+                final_message="Here are the closest electronics stores where you might find one."
+                messenger.send_message(final_message, mobile)# Display the store info
+                # Iterate over each result to extract the store name and address
+                for store in nearest_shops:
+                    store_name = store.get("title")
+                    store_address = store.get("address")
+                    store_phone=store.get("phone")
+                    store_website=store.get("website")
+                    
+                    # Now do something with each store name and address
+                    if store_name and store_address and store_phone:
+                        # Combine store name and address
+                        store_info = f"*Name: {store_name}*\n\n*Address:* {store_address}\n\n *Phone:* {store_phone}\n\n"
+
+        # Include the Link heading only if a website is available
+                        store_website = store.get("website")
+                        if store_website:
+                            store_info += f"*Link:* {store_website}\n"
+                        
+                        messenger.send_message(store_info, mobile)  # Send the store info as a message
+
+
 
             elif message_type == "image":
                 image = messenger.get_image(data)
@@ -300,42 +358,42 @@ def hook():
     return "OK", 200
 
 
-def send_language_selection(recipient_id):
-    messenger.send_reply_button(
-        recipient_id=recipient_id,
-        button={
-            "type": "button",
-            "body": {
-                "text": "Please select a language"
-            },
-            "action": {
-                "buttons": [
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_en",
-                            "title": "English"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_ml",
-                            "title": "Malayalam"
-                        }
-                    },
-                    {
-                        "type": "reply",
-                        "reply": {
-                            "id": "lang_hi",
-                            "title": "Hindi"
-                        }
-                    }
-                    # Add more language options here...
-                ]
-            }
-        },
-    )
+# def send_language_selection(recipient_id):
+#     messenger.send_reply_button(
+#         recipient_id=recipient_id,
+#         button={
+#             "type": "button",
+#             "body": {
+#                 "text": "Please select a language"
+#             },
+#             "action": {
+#                 "buttons": [
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_en",
+#                             "title": "English"
+#                         }
+#                     },
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_ml",
+#                             "title": "Malayalam"
+#                         }
+#                     },
+#                     {
+#                         "type": "reply",
+#                         "reply": {
+#                             "id": "lang_hi",
+#                             "title": "Hindi"
+#                         }
+#                     }
+#                     # Add more language options here...
+#                 ]
+#             }
+#         },
+#     )
 
 
 ## this function fetches the title from the created json file as button to whstapp user
@@ -346,6 +404,27 @@ def load_device_names_from_json(file_path):
         device_names = json.load(f)
     return device_names
 
+def nearby_store(recipient_id):
+    messenger.send_reply_button(
+        recipient_id=recipient_id,
+        button={
+            "type": "button",
+            "body": {
+                "text": ""
+            },
+            "action": {
+                "buttons": [
+                    {
+                        "type": "reply",
+                        "reply": {
+                            "id": "b4",
+                            "title": "Find Near By Devices"
+                        }
+                    }
+                ]
+            }
+        },
+    )
 
 
 def send_reply_button(recipient_id):
@@ -526,13 +605,35 @@ def convert_audio_to_text(audio_filename):
 client1 = translate.Client()
 
 
+def detect_lang(message)-> str:
+    lang = client1.detect_language(message)
+    detected = lang['language']
+    print("languageeeeee",lang['language'])
+    return detected
+
+
 def translate_text(text, target_language) -> str:
+    # Call the API translate method assuming it returns a dictionary with the translation
     result = client1.translate(text, target_language=target_language)
-    print("Original Text: {}".format(result['input']))
-    print("Translated Text: {}".format(result['translatedText']))
-    print("Detected Source Language: {}".format(result['detectedSourceLanguage']))
+    # Accessing the translated text from the result dictionary
+    translated_text = result.get('translatedText', '')
     
-    mal_string = result['translatedText']
+    if not isinstance(translated_text, str):
+        raise TypeError("Expected 'result['translatedText']' to be a string")
+        
+    # Formatting each occurrence of '###' by ensuring it starts with a new line if needed
+    formatted_text = re.sub(r'###', r'\n-------------------------------------\n', translated_text)
+    # Formatting bold text by wrapping with newlines if needed (matching **bold**)
+    formatted_text = re.sub(r'(?m)\*([^*]+)\*', r'\n*\1*\n', formatted_text)
+    
+    print("## Original Text")
+    print("> {}".format(result['input']))
+    print("\n## Translated Text")
+    print("> {}".format(formatted_text))
+    print("\n## Detected Source Language")
+    print("> Code: {}".format(result['detectedSourceLanguage']))
+    
+    mal_string = formatted_text
     return mal_string
 
 
@@ -625,7 +726,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided"
+        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided.Device specifications strings should be enclosed in * and * instead of ** and **.Device name should only be maximum upto 23 characters"
     },
     {
         "role": "user",
@@ -662,6 +763,48 @@ def get_device_response(conversation):
     )
     return response.choices[0].message.content 
 
+def should_start_new_session(mobile: str) -> bool:
+    # Define the threshold for when to consider starting a new session
+    session_threshold = timedelta(minutes=5)
+    
+    # Get the current time in UTC
+    now_utc = datetime.now(timezone.utc)
+    
+    # Query the 'sessions' table for the most recent session by 'mobile'
+    response = supabase_client.table("sessions")\
+        .select("timestamp")\
+        .eq("mobile", mobile)\
+        .order("timestamp")\
+        .limit(1)\
+        .execute()
+        
+    if response.data:
+        # Parse the last session's timestamp and convert it to UTC
+        last_session_timestamp = response.data[0]['timestamp']
+        last_session_time = datetime.fromisoformat(last_session_timestamp).replace(tzinfo=timezone.utc)
+        
+        # Determine if the last session is older than the session threshold
+        if now_utc - last_session_time > session_threshold:
+            return True
+    else:
+        # No existing session for this mobile number, which means we should start a new session
+        return True
+    
+    # Existing session is within the threshold limit
+    return False
+    
+
+def record_session(mobile):
+    if should_start_new_session(mobile):
+        # Insert or update the session's timestamp to the current time for this mobile number
+        supabase_client.table("sessions")\
+            .insert({"mobile": mobile, "timestamp": datetime.now(timezone.utc).isoformat()}, upsert=True)\
+            .execute()
+        # Return True to indicate that a new session was started
+        return True
+    # Return False to indicate that the existing session was kept alive
+    return False
+
 def store_message(user_id, role, content):
     data = {
         "user_id": user_id,
@@ -682,6 +825,37 @@ def get_conversation(user_id):
         .execute()
     
     return response.data
+
+
+
+
+
+def send_whatsapp_location_request():
+    url = f"https://graph.facebook.com/v15.0/{phone_number_id}/messages"
+    
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}"
+    }
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "type": "interactive",
+        "to": mobile,
+        "interactive": {
+            "type": "location_request_message",
+            "body": {
+                "text": "Wanna find nearby stores?Share your Location😁."
+            },
+            "action": {
+                "name": "send_location"
+            }
+        }
+    }
+    
+    response = requests.post(url, headers=headers, json=payload)
+    return response.json()
 
 
 if __name__ == "__main__":
