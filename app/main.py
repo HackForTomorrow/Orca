@@ -202,15 +202,12 @@ def hook():
     # - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
 
 
-                elif message_type == "location":
-                    message_location = messenger.get_location(data)
-                    message_latitude = message_location["latitude"]
-                    message_longitude = message_location["longitude"]
-                    logging.info("Location: %s, %s", message_latitude, message_longitude)
-                    messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
-                    # fetch_device_details("iphone 12")
-                    
-                    # messenger.send_audio(audio="en-US-Wavenet-D.mp3", recipient_id="+919048806904",link=False)
+            elif message_type == "location":
+                message_location = messenger.get_location(data)
+                message_latitude = message_location["latitude"]
+                message_longitude = message_location["longitude"]
+                logging.info("Location: %s, %s", message_latitude, message_longitude)
+                messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
 
                 elif message_type == "image":
                     image = messenger.get_image(data)
@@ -254,30 +251,31 @@ def hook():
                     audio_url = messenger.query_media_url(audio_id)
                     audio_filename = messenger.download_media(audio_url, mime_type)
 
-                    # Converts the audio file to text
-                    transcription_text = convert_audio_to_text(audio_filename)
-
-                    # Process the transcribed text and send a response
+                # Converts the audio file to text
+                transcription_text = convert_audio_to_text(audio_filename)
+                if gptresponse_dict.get(mobile):
+                # Process the transcribed text and send a response
                     response = process_message(transcription_text)
                     print(response)
                     messenger.send_message(response, mobile)
                     print(transcription_text)
+                    if not processed_image.get(mobile):
+                        send_reply_button(mobile)
 
                     # Text to WAV using Google Cloud Text-to-Speech
                     text_to_wav("en-US-Wavenet-D", response)
-                    wav_filename = "en-US-Wavenet-D.wav"
-                    mp3_filename = "en-US-Wavenet-D.mp3"
-                    convert_wav_to_mp3(wav_filename, mp3_filename)
                     # media_id = messenger.upload_media(
-                    # media='ml-IN-Wavenet-D.mp3',
+                    # media='ml-IN-Wavenet-D.wav',
                     # )['id']
                     # messenger.send_audio(
-                    #   audio=media_id,
-                    #   recipient_id=mobile,
-                    #   link=False
+                    #     audio=media_id,
+                    #     recipient_id=mobile,
+                    #     link=False
                     # )
                     # Send the generated audio file using local path
-                    send_local_audio(mp3_filename, mobile)
+                    send_local_audio("en-US-Wavenet-D.wav", mobile)
+                    gptresponse_dict[mobile] = False
+
 
                 elif message_type == "document":
                     file = messenger.get_document(data)
@@ -598,11 +596,6 @@ def fetch_device_details(device_name):
 
     return None
 
-
-def convert_wav_to_mp3(wav_filename, mp3_filename):
-    audio = AudioSegment.from_wav(wav_filename)
-    audio.export(mp3_filename, format="mp3")
-
 def send_local_audio(file_path, recipient_id):
     url = f"https://graph.facebook.com/v18.0/{phone_number_id}/messages"
     headers = {
@@ -610,7 +603,7 @@ def send_local_audio(file_path, recipient_id):
     }
 
     # Determine correct MIME type for the file and set the MIME type in the upload request.
-    mime_type = 'audio/mpeg'  # Assuming you're using MP3 format; adjust as needed
+    mime_type = 'audio/wav'  # Assuming you're using MP3 format; adjust as needed
     with open(file_path, 'rb') as file_data:
         files = {
             'file': (os.path.basename(file_path), file_data, mime_type)
@@ -641,33 +634,7 @@ def send_local_audio(file_path, recipient_id):
     else:
         logging.error(f"Failed to upload media. Status Code: {response_media.status_code}, Response: {response_media.text}")
 
-
-
-def generate_prompt(description, product_keywords):
-    prompt = "User Description: " + description + "i dont have any technical knowledge.explain it to me considering that"
-    if product_keywords:
-        prompt += " " + ", ".join(product_keywords)
-    return prompt
-
-def train_model(prompt, context):
-    global device_selectedd
-    chat_model = ChatOpenAI(
-        temperature=0,  
-        model="gpt-4o",
-        openai_api_key=openai_api_key,
-        max_tokens=1000
-    )
-    output = chat_model([
-        HumanMessage(content=context),  
-        HumanMessage(content=prompt)  
-    ])
-
-    # Get the response from the model
-    response = output.content
-    global engtext
-    engtext = response
-    print(response)
-    return response  
+ 
 
 def process_message(message):
     user_id = mobile  # Ensure that this is defined globally or passed as an argument
@@ -737,18 +704,6 @@ def get_conversation(user_id):
         .execute()
     
     return response.data
-
-
-def extract_product_keywords(description):
-    # Read keywords from keywords.txt
-    with open("keywords.txt", "r") as file:
-        relevant_keywords = [line.strip() for line in file]
-
-    # Check if any product keywords are present in the description
-    found_keywords = [keyword for keyword in relevant_keywords if keyword in description]
-    print(found_keywords)
-    return found_keywords
-
 
 
 if __name__ == "__main__":
