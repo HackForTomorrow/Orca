@@ -21,7 +21,7 @@ from supabase import create_client, Client
 from datetime import datetime ,timezone, timedelta
 import re
 import json
-# Initialize Flask App
+# Initialize Flask App 
 app = Flask(__name__)
 
 # Load .env file
@@ -29,7 +29,7 @@ load_dotenv()
 supabase_url = os.getenv("SUPABASE_URL")
 supabase_key = os.getenv("SUPABASE_KEY")
 supabase_client: Client = create_client(supabase_url, supabase_key)
-access_token = os.getenv("ACCESS_TOKEN")
+access_token = "EAAN61rYdg9kBO44BpVQFt5vZC7MsdP0qOdXOI29pvxZCHPvgXvBZAb8yT0gzxkXFhRilPxWw3ZBTXEdK8RqQnHzcSnZAr5ibZAByBVcTaUmJV97v2j9F8FZCThQ4ZBFMF0rPs50MClKhRlMUqAQpkbFEeOvS6XuxynCtVqLcZCWaXuoOrpn4dZCEZCWBus56JZB9R4360gvc5tPzDNoZCUiHTFHQZD"
 phone_number_id = os.getenv("PHONE_NUMBER_ID")
 if not access_token or not phone_number_id:
     logging.error("Missing ACCESS_TOKEN or PHONE_NUMBER_ID environment variable")
@@ -66,233 +66,240 @@ user_preferences = {}
 
 @app.post("/webhook")
 def hook():
+    
+    try:
    
     # Handle Webhook Subscriptions
-    data = request.get_json()
-    global mobile,processed_image,user_language
-   
+        data = request.get_json()
+        global mobile,processed_image,user_language
     
-    changed_field = messenger.changed_field(data)
-    if changed_field == "messages":
-        new_message = messenger.is_message(data)
-        if new_message:
-            mobile = messenger.get_mobile(data)
-            name = messenger.get_name(data)
-            message_type = messenger.get_message_type(data)
-            logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
+        
+        changed_field = messenger.changed_field(data)
+        if changed_field == "messages":
+            new_message = messenger.is_message(data)
+            if new_message:
+                mobile = messenger.get_mobile(data)
+                name = messenger.get_name(data)
+                message_type = messenger.get_message_type(data)
+                logging.info(f"New Message; sender:{mobile} name:{name} type:{message_type}")
 
-            # Check if the user has been greeted already
-            if not user_greeted.get(mobile, False):
-                # Send greeting and mark user as greeted
-                messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
-                send_language_selection(mobile)
-                user_greeted[mobile] = True
-                processed_image[mobile] = False
+                # Check if the user has been greeted already
+                if not user_greeted.get(mobile, False):
+                    # Send greeting and mark user as greeted
+                    messenger.send_message(f"Hi {name}, I am your chatbot. Send me a message.", mobile)
+                    send_language_selection(mobile)
+                    user_greeted[mobile] = True
+                    processed_image[mobile] = False
 
-            if mobile not in gptresponse_dict:
-                gptresponse_dict[mobile] = True
-            # Now handle different message types without repeating the greeting
-            if message_type == "text":
-                message = messenger.get_message(data)
-                greetings = ["hi", "hello"]
-                is_greeting = any(greeting in message.lower() for greeting in greetings)
+                if mobile not in gptresponse_dict:
+                    gptresponse_dict[mobile] = True
+                # Now handle different message types without repeating the greeting
+                if message_type == "text":
+                    message = messenger.get_message(data)
+                    greetings = ["hi", "hello"]
+                    is_greeting = any(greeting in message.lower() for greeting in greetings)
 
-                if not is_greeting:
-            # Process non-greeting messages
-                    if gptresponse_dict.get(mobile):
-                        # Get a response from GPT
-                        response = process_message(message)
-                        translated_text = translate_text(response, user_language)
-                        messenger.send_message(translated_text,mobile)
-                        # messenger.send_message(response, mobile)
-                        print(response)
-                        if not processed_image.get(mobile):
-                                send_reply_button(mobile)
-                        # Translate the response to Malayalam (ml)
-                       
-                        # text_to_wav("ml-IN-Wavenet-D", translated_text)
+                    if not is_greeting:
+                # Process non-greeting messages
+                        if gptresponse_dict.get(mobile):
+                            # Get a response from GPT
+                            response = process_message(message)
+                            translated_text = translate_text(response, user_language)
+                            messenger.send_message(translated_text,mobile)
+                            # messenger.send_message(response, mobile)
+                            print(response)
+                            if not processed_image.get(mobile):
+                                    send_reply_button(mobile)
+                            # Translate the response to Malayalam (ml)
                         
-                        # Disable GPT response for subsequent messages
-                        gptresponse_dict[mobile] = False
+                            # text_to_wav("ml-IN-Wavenet-D", translated_text)
+                            
+                            # Disable GPT response for subsequent messages
+                            gptresponse_dict[mobile] = False
 
-                        # Send the reply button once after the greeting phase
-                        
+                            # Send the reply button once after the greeting phase
+                            
 
-                else:
-                    # First greeting from the user
-                    if not user_greeted.get(mobile):
-                        response = f"Hi {name}, how can I assist you today?"
-                        messenger.send_message(response, mobile)
-                        user_greeted[mobile] = True
+                    else:
+                        # First greeting from the user
+                        if not user_greeted.get(mobile):
+                            response = f"Hi {name}, how can I assist you today?"
+                            messenger.send_message(response, mobile)
+                            user_greeted[mobile] = True
 
 
 
-            elif message_type == "interactive":
-                gptresponse_dict[mobile] = False
-                message_response = messenger.get_interactive_response(data)
-                interactive_type = message_response.get("type")
-                message_id = message_response[interactive_type]["id"]
-                message_text = message_response[interactive_type]["title"]
-                logging.info(f"Interactive Message; {message_id}: {message_text}")
-                device_names = load_device_names_from_json("deviceNames.json")
-                rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
+                elif message_type == "interactive":
+                    gptresponse_dict[mobile] = False
+                    message_response = messenger.get_interactive_response(data)
+                    interactive_type = message_response.get("type")
+                    message_id = message_response[interactive_type]["id"]
+                    message_text = message_response[interactive_type]["title"]
+                    logging.info(f"Interactive Message; {message_id}: {message_text}")
+                    device_names = load_device_names_from_json("deviceNames.json")
+                    rows = [{"id": f"row {index}", "title": device_name, "description": ""} for index, device_name in enumerate(device_names, start=1)]
 
-                # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
-                if message_id == "b1":
-                    messenger.send_message("Please select the device name", mobile)
-                                    # Use the rows in the send_button call
-                    messenger.send_button(
-                        recipient_id=mobile,  # make sure 'mobile' contains the correct recipient id
-                        button={
-                            "header": "",
-                            "body": "Devices List",
-                            "footer": "",
-                            "action": {
-                                "button": "Select one device",
-                                "sections": [
-                                    {
-                                        "title": "Devices",
-                                        "rows": rows,
-                                    }
-                                ],
+                    # messenger.send_message(f"Interactive Message; {message_id}: {message_text}", mobile)
+                    if message_id == "b1":
+                        messenger.send_message("Please select the device name", mobile)
+                                        # Use the rows in the send_button call
+                        messenger.send_button(
+                            recipient_id=mobile,  # make sure 'mobile' contains the correct recipient id
+                            button={
+                                "header": "",
+                                "body": "Devices List",
+                                "footer": "",
+                                "action": {
+                                    "button": "Select one device",
+                                    "sections": [
+                                        {
+                                            "title": "Devices",
+                                            "rows": rows,
+                                        }
+                                    ],
+                                },
                             },
-                        },
-                    )
+                        )
 
-                                # Assuming fetch_device_details requires a device name argument.
-                                # The device name should come from previous conversation context or set by some other logic.
-                                # device_name = "iphone 12"  # This is just an example. Replace with actual device name.
-                                # fetch_device_details(device_name)
-                elif message_id == "b2":
-                    gptresponse_dict[mobile] = True
+                                    # Assuming fetch_device_details requires a device name argument.
+                                    # The device name should come from previous conversation context or set by some other logic.
+                                    # device_name = "iphone 12"  # This is just an example. Replace with actual device name.
+                                    # fetch_device_details(device_name)
+                    elif message_id == "b2":
+                        gptresponse_dict[mobile] = True
 
-                elif message_id == "b3":
-                    device_selected = image_device_names[mobile]
-                    messenger.send_message(f"Device selected: {device_selected}", mobile)
-                    fetch_device_details(device_selected)  
+                    elif message_id == "b3":
+                        device_selected = image_device_names[mobile]
+                        messenger.send_message(f"Device selected: {device_selected}", mobile)
+                        fetch_device_details(device_selected)  
 
-                elif message_id.startswith('lang_'):
-                    selected_language = message_id.split('_')[1] 
-                    logging.info(f"Language selected: {selected_language}")
-                    user_preferences[mobile] = {'language': selected_language}
-                    user_language = user_preferences.get(mobile, {}).get('language')
-                    messenger.send_message(f"You have selected {message_text}.", mobile)
-                    gptresponse_dict[mobile] = True
+                    elif message_id.startswith('lang_'):
+                        selected_language = message_id.split('_')[1] 
+                        logging.info(f"Language selected: {selected_language}")
+                        user_preferences[mobile] = {'language': selected_language}
+                        user_language = user_preferences.get(mobile, {}).get('language')
+                        messenger.send_message(f"You have selected {message_text}.", mobile)
+                        gptresponse_dict[mobile] = True
 
+                    else:
+                        messenger.send_message(f"Device selected: {message_text}", mobile)
+                        res = get_device_response(message_text)
+                        trans = translate_text(res,user_language)
+                        print(type(res))
+                        messenger.send_message(trans, mobile)
+                        fetch_device_details(message_text)
+
+
+
+    # Notes:
+    # - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
+    # - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
+
+
+
+    # Notes:
+    # - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
+    # - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
+
+
+                elif message_type == "location":
+                    message_location = messenger.get_location(data)
+                    message_latitude = message_location["latitude"]
+                    message_longitude = message_location["longitude"]
+                    logging.info("Location: %s, %s", message_latitude, message_longitude)
+                    messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
+                    # fetch_device_details("iphone 12")
+                    
+                    # messenger.send_audio(audio="en-US-Wavenet-D.mp3", recipient_id="+919048806904",link=False)
+
+                elif message_type == "image":
+                    image = messenger.get_image(data)
+                    image_id, mime_type = image["id"], image["mime_type"]
+                    image_url = messenger.query_media_url(image_id)
+                    image_filename = messenger.download_media(image_url, mime_type)
+                    logging.info(f"Processing image from file: {image_filename}")
+                    
+                    # Process the image and get an initial response
+                    initial_response = process_image(image_filename)
+
+                    # Save the initial response into the conversation history
+                    store_message(mobile, "assistant", initial_response)
+
+                    # Use the existing 'process_message' function to get the name of the device from the response.
+                    gpt_prompt_for_device_name = "From the following description, return only the device name as a single word ,not as a sentence for example only (for example Apple Iphone,Samsung s24,etc): " + initial_response
+                    device_name_response = process_message(gpt_prompt_for_device_name)
+                    
+                    # Send the initial response followed by the device name to WhatsApp
+                    messenger.send_message(initial_response, mobile)
+                    if device_name_response:
+                        image_device_names[mobile] = device_name_response
+                    
+                    # Set processed_image to True for this mobile number
+                    processed_image[mobile] = True
+
+                    # Send the image specific reply buttons
+                    send_image_reply_button(mobile)
+                    logging.info(f"{mobile} sent image {image_id}")
+
+                elif message_type == "video":
+                    video = messenger.get_video(data)
+                    video_id, mime_type = video["id"], video["mime_type"]
+                    video_url = messenger.query_media_url(video_id)
+                    video_filename = messenger.download_media(video_url, mime_type)
+                    logging.info(f"{mobile} sent video {video_filename}")
+
+                elif message_type == "audio":
+                    audio = messenger.get_audio(data)
+                    audio_id, mime_type = audio["id"], audio["mime_type"]
+                    audio_url = messenger.query_media_url(audio_id)
+                    audio_filename = messenger.download_media(audio_url, mime_type)
+
+                    # Converts the audio file to text
+                    transcription_text = convert_audio_to_text(audio_filename)
+
+                    # Process the transcribed text and send a response
+                    response = process_message(transcription_text)
+                    print(response)
+                    messenger.send_message(response, mobile)
+                    print(transcription_text)
+
+                    # Text to WAV using Google Cloud Text-to-Speech
+                    text_to_wav("en-US-Wavenet-D", response)
+                    wav_filename = "en-US-Wavenet-D.wav"
+                    mp3_filename = "en-US-Wavenet-D.mp3"
+                    convert_wav_to_mp3(wav_filename, mp3_filename)
+                    # media_id = messenger.upload_media(
+                    # media='ml-IN-Wavenet-D.mp3',
+                    # )['id']
+                    # messenger.send_audio(
+                    #   audio=media_id,
+                    #   recipient_id=mobile,
+                    #   link=False
+                    # )
+                    # Send the generated audio file using local path
+                    send_local_audio(mp3_filename, mobile)
+
+                elif message_type == "document":
+                    file = messenger.get_document(data)
+                    file_id, mime_type = file["id"], file["mime_type"]
+                    file_url = messenger.query_media_url(file_id)
+                    file_filename = messenger.download_media(file_url, mime_type)
+                    logging.info(f"{mobile} sent file {file_filename}")
                 else:
-                    messenger.send_message(f"Device selected: {message_text}", mobile)
-                    res = get_device_response(message_text)
-                    trans = translate_text(res,user_language)
-                    print(type(res))
-                    messenger.send_message(trans, mobile)
-                    fetch_device_details(message_text)
-
-
-
-# Notes:
-# - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
-# - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
-
-
-
-# Notes:
-# - Each 'row' dictionary now has a unique id of the format 'row_INDEX', where INDEX is the 1-based index.
-# - The 'fetch_device_details' function will be called with the title (which is the device name) from the matching row.
-
-
-            elif message_type == "location":
-                message_location = messenger.get_location(data)
-                message_latitude = message_location["latitude"]
-                message_longitude = message_location["longitude"]
-                logging.info("Location: %s, %s", message_latitude, message_longitude)
-                messenger.send_message(f"Location: {message_latitude}, {message_longitude}", mobile)
-                # fetch_device_details("iphone 12")
-                
-                # messenger.send_audio(audio="en-US-Wavenet-D.mp3", recipient_id="+919048806904",link=False)
-
-            elif message_type == "image":
-                image = messenger.get_image(data)
-                image_id, mime_type = image["id"], image["mime_type"]
-                image_url = messenger.query_media_url(image_id)
-                image_filename = messenger.download_media(image_url, mime_type)
-                logging.info(f"Processing image from file: {image_filename}")
-                
-                # Process the image and get an initial response
-                initial_response = process_image(image_filename)
-
-                # Save the initial response into the conversation history
-                store_message(mobile, "assistant", initial_response)
-
-                # Use the existing 'process_message' function to get the name of the device from the response.
-                gpt_prompt_for_device_name = "From the following description, return only the device name as a single word ,not as a sentence for example only (for example Apple Iphone,Samsung s24,etc): " + initial_response
-                device_name_response = process_message(gpt_prompt_for_device_name)
-                
-                # Send the initial response followed by the device name to WhatsApp
-                messenger.send_message(initial_response, mobile)
-                if device_name_response:
-                    image_device_names[mobile] = device_name_response
-                
-                # Set processed_image to True for this mobile number
-                processed_image[mobile] = True
-
-                # Send the image specific reply buttons
-                send_image_reply_button(mobile)
-                logging.info(f"{mobile} sent image {image_id}")
-
-            elif message_type == "video":
-                video = messenger.get_video(data)
-                video_id, mime_type = video["id"], video["mime_type"]
-                video_url = messenger.query_media_url(video_id)
-                video_filename = messenger.download_media(video_url, mime_type)
-                logging.info(f"{mobile} sent video {video_filename}")
-
-            elif message_type == "audio":
-                audio = messenger.get_audio(data)
-                audio_id, mime_type = audio["id"], audio["mime_type"]
-                audio_url = messenger.query_media_url(audio_id)
-                audio_filename = messenger.download_media(audio_url, mime_type)
-
-                # Converts the audio file to text
-                transcription_text = convert_audio_to_text(audio_filename)
-
-                # Process the transcribed text and send a response
-                response = process_message(transcription_text)
-                print(response)
-                messenger.send_message(response, mobile)
-                print(transcription_text)
-
-                # Text to WAV using Google Cloud Text-to-Speech
-                text_to_wav("en-US-Wavenet-D", response)
-                wav_filename = "en-US-Wavenet-D.wav"
-                mp3_filename = "en-US-Wavenet-D.mp3"
-                convert_wav_to_mp3(wav_filename, mp3_filename)
-                # media_id = messenger.upload_media(
-                # media='ml-IN-Wavenet-D.mp3',
-                # )['id']
-                # messenger.send_audio(
-                #   audio=media_id,
-                #   recipient_id=mobile,
-                #   link=False
-                # )
-                # Send the generated audio file using local path
-                send_local_audio(mp3_filename, mobile)
-
-            elif message_type == "document":
-                file = messenger.get_document(data)
-                file_id, mime_type = file["id"], file["mime_type"]
-                file_url = messenger.query_media_url(file_id)
-                file_filename = messenger.download_media(file_url, mime_type)
-                logging.info(f"{mobile} sent file {file_filename}")
+                    logging.info(f"{mobile} sent {message_type} ")
+                    logging.info(data)
             else:
-                logging.info(f"{mobile} sent {message_type} ")
-                logging.info(data)
-        else:
-            delivery = messenger.get_delivery(data)
-            if delivery:
-                logging.info(f"Message : {delivery}")
-            else:
-                logging.info("No new message")
-    return "OK", 200
+                delivery = messenger.get_delivery(data)
+                if delivery:
+                    logging.info(f"Message : {delivery}")
+                else:
+                    logging.info("No new message")
+                    
+        return "OK", 200
+
+    except Exception as e:
+        logging.error(f"An error occurred: {e}")
+        return "Internal Server Error", 500
 
 
 def send_language_selection(recipient_id):
@@ -518,17 +525,39 @@ def convert_audio_to_text(audio_filename):
             )
     return transcript.text
 
+
+
 client1 = translate.Client()
 
 
+
 def translate_text(text, target_language) -> str:
+    # Call the API translate method assuming it returns a dictionary with the translation
     result = client1.translate(text, target_language=target_language)
-    print("Original Text: {}".format(result['input']))
-    print("Translated Text: {}".format(result['translatedText']))
-    print("Detected Source Language: {}".format(result['detectedSourceLanguage']))
     
-    mal_string = result['translatedText']
+    # Accessing the translated text from the result dictionary
+    translated_text = result.get('translatedText', '')
+    
+    if not isinstance(translated_text, str):
+        raise TypeError("Expected 'result['translatedText']' to be a string")
+        
+    # Formatting each occurrence of '###' by ensuring it starts with a new line if needed
+    formatted_text = re.sub(r'###', r'\n-------------------------------------\n', translated_text)
+
+    # Formatting bold text by wrapping with newlines if needed (matching **bold**)
+    formatted_text = re.sub(r'(?m)\*\*([^*]+)\*\*', r'\n**\1**\n', formatted_text)
+    
+    print("## Original Text")
+    print("> {}".format(result['input']))
+    print("\n## Translated Text")
+    print("> {}".format(formatted_text))
+    print("\n## Detected Source Language")
+    print("> Code: {}".format(result['detectedSourceLanguage']))
+    
+    mal_string = formatted_text
     return mal_string
+
+
 
 
 def fetch_device_details(device_name):
@@ -651,7 +680,7 @@ def process_message(message):
     # Get the latest message from the user and form the payload for OpenAI completion
     payload = [{
         "role": "system",
-        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prombts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided"
+        "content": "Context: Orca is an AI assistant that provides only recommendations about electronic devices based on user requirements.No other requirements are dealt with.All other prompts must be avoided.Before the title of the device names you suggest put ###.Only before the device name it must be provided.Along with the title detailed descriptions and specifications about electronic devices must be provided.Descriptions and specifications must not start with ** instead start with only one *."
     },
     {
         "role": "user",
